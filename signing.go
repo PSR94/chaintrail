@@ -125,21 +125,21 @@ func (j *Journal) SignedCheckpoint(privateKeyPath string) (string, SignedCheckpo
 }
 
 func signCheckpointPayload(payload SignedCheckpoint, privateKey ed25519.PrivateKey) (string, error) {
+	// Typed struct encoding is intentionally used here instead of Chaintrail's
+	// record canonicalizer: token fields include uint64 values that should remain
+	// ordinary JSON integers for strict typed decoding on verification.
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("encode signed checkpoint: %w", err)
 	}
-	canonical, err := canonicalJSON(raw)
-	if err != nil {
-		return "", fmt.Errorf("canonicalize signed checkpoint: %w", err)
-	}
-	signature := ed25519.Sign(privateKey, signedCheckpointMessage(canonical))
-	return signedCheckpointPrefix + "." + base64.RawURLEncoding.EncodeToString(canonical) + "." + base64.RawURLEncoding.EncodeToString(signature), nil
+	signature := ed25519.Sign(privateKey, signedCheckpointMessage(raw))
+	return signedCheckpointPrefix + "." + base64.RawURLEncoding.EncodeToString(raw) + "." + base64.RawURLEncoding.EncodeToString(signature), nil
 }
 
-// VerifySignedCheckpoint verifies token syntax, canonical encoding, key identity,
-// and Ed25519 signature. Call Journal.Verify with payload.Checkpoint() to bind it
-// to a concrete journal and replay the chain through the signed sequence.
+// VerifySignedCheckpoint verifies token syntax, deterministic typed encoding,
+// key identity, and Ed25519 signature. Call Journal.Verify with
+// payload.Checkpoint() to bind it to a concrete journal and replay the chain
+// through the signed sequence.
 func VerifySignedCheckpoint(token, publicKeyPath string) (SignedCheckpoint, error) {
 	publicKey, err := loadPublicKey(publicKeyPath)
 	if err != nil {
@@ -171,12 +171,12 @@ func VerifySignedCheckpoint(token, publicKeyPath string) (SignedCheckpoint, erro
 	if err := dec.Decode(&extra); err != io.EOF {
 		return SignedCheckpoint{}, fmt.Errorf("decode signed checkpoint: trailing data")
 	}
-	canonical, err := canonicalJSON(payloadBytes)
+	normalized, err := json.Marshal(payload)
 	if err != nil {
-		return SignedCheckpoint{}, fmt.Errorf("canonicalize signed checkpoint: %w", err)
+		return SignedCheckpoint{}, fmt.Errorf("re-encode signed checkpoint: %w", err)
 	}
-	if !bytes.Equal(canonical, payloadBytes) {
-		return SignedCheckpoint{}, fmt.Errorf("signed checkpoint payload is not canonical JSON")
+	if !bytes.Equal(normalized, payloadBytes) {
+		return SignedCheckpoint{}, fmt.Errorf("signed checkpoint payload is not in deterministic token encoding")
 	}
 	if payload.Version != signedCheckpointVersion {
 		return SignedCheckpoint{}, fmt.Errorf("unsupported signed checkpoint version %d", payload.Version)
