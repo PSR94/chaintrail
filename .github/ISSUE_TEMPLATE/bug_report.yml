@@ -1,0 +1,58 @@
+name: Bug report
+description: Report reproducible incorrect behavior without including secrets or private journal data.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For security-sensitive issues, use private vulnerability reporting instead of this public form. Do not attach private keys, credentials, or production journal contents.
+  - type: input
+    id: version
+    attributes:
+      label: Chaintrail version / commit
+      placeholder: v0.1.0 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: go
+    attributes:
+      label: Go version
+      placeholder: go1.23.12
+  - type: input
+    id: platform
+    attributes:
+      label: OS / filesystem
+      placeholder: Ubuntu 24.04, ext4
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Include the exact command and sanitized error/output.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal safe reproduction
+      description: Use synthetic data only. Do not paste sensitive journal contents or keys.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed credentials, private keys, and production-sensitive data.
+          required: true
+        - label: I checked whether this should be reported privately as a security vulnerability.
+          required: true

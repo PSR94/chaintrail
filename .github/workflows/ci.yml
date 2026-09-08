@@ -8,14 +8,70 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  quality:
+    name: quality / go1.23
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.23.x'
-      - run: gofmt -d . | tee /tmp/gofmt.diff && test ! -s /tmp/gofmt.diff
-      - run: go vet ./...
-      - run: go test -race -timeout=60s ./...
+          cache: false
+      - name: Format
+        run: make fmt-check
+      - name: Vet
+        run: make vet
+      - name: Unit and integration tests
+        run: make test
+      - name: Race detector
+        run: make race
+      - name: Coverage report
+        run: make cover
+      - name: Benchmark smoke
+        run: make bench
+      - name: Build CLI
+        run: make build
+      - name: Shell syntax
+        run: bash -n examples/deploy-audit/*.sh
+      - name: Deployment audit example
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$(mktemp -d)"
+          bin="$PWD/bin/chaintrail"
+          journal="$root/journal"
+          private_key="$root/checkpoint.key.pem"
+          public_key="$root/checkpoint.pub.pem"
+          checkpoint="$root/release.checkpoint"
+
+          "$bin" init -dir "$journal"
+          "$bin" keygen -private "$private_key" -public "$public_key"
+          CHAINTRAIL_BIN="$bin" \
+          CHAINTRAIL_DIR="$journal" \
+          CHAINTRAIL_SIGN_KEY="$private_key" \
+          CHAINTRAIL_CHECKPOINT_OUT="$checkpoint" \
+            ./examples/deploy-audit/deploy-audit.sh api ci-release -- sh -c 'true'
+
+          CHAINTRAIL_BIN="$bin" \
+            ./examples/deploy-audit/verify-release.sh "$journal" "$checkpoint" "$public_key"
+          "$bin" query -dir "$journal" -kind-prefix deploy. -format json > "$root/query.json"
+          grep -q 'deploy.started' "$root/query.json"
+          grep -q 'deploy.completed' "$root/query.json"
+          "$bin" stats -dir "$journal" -format json > "$root/stats.json"
+          grep -q '"head_seq": 2' "$root/stats.json"
+
+  compatibility:
+    name: compatibility / go${{ matrix.go-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ['1.22.x', '1.23.x']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: false
+      - run: go test ./...
       - run: go build ./cmd/chaintrail

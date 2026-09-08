@@ -1,4 +1,8 @@
 /.chaintrail/
 /chaintrail
+/bin/
+/coverage.out
 *.test
 .coverage
+*.key.pem
+.DS_Store
