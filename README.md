@@ -1,8 +1,41 @@
+![Chaintrail banner](docs/assets/chaintrail-banner.svg)
+
 # Chaintrail
 
 Chaintrail is a small Go tool for tamper-evident, append-only local audit journals. It is intended for scripts, deployment tooling, maintenance jobs, and internal utilities that need a durable record of *what happened* without standing up a database or logging service.
 
 Each record is hash-chained to the previous record and to immutable journal metadata. `verify` replays the chain, validates sequence numbers and canonical payloads, and reports the current head hash. A checkpoint can be stored outside the journal to detect rollback or wholesale replacement.
+
+## Architecture
+
+![Chaintrail architecture](docs/assets/chaintrail-architecture.svg)
+
+The append path is deliberately short: validate input, acquire the OS lock, rebuild a stale head cache when needed, canonicalize the JSON payload, derive the next record hash, append one NDJSON line, `fsync`, and atomically refresh `head.json`. Verification does not trust the cache; it replays the journal from the metadata-derived anchor.
+
+### Integrity flow
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"transparent","lineColor":"#64748b","fontFamily":"Inter, ui-sans-serif, system-ui"}}}%%
+flowchart LR
+  M["meta.json\njournal identity"] --> A["metadata anchor\nSHA-256"]
+  A --> R1["record 1\ncanonical payload"]
+  R1 --> R2["record 2\nprev = hash(1)"]
+  R2 --> RN["record N\nprev = hash(N-1)"]
+  RN --> H["head.json\nrebuildable cache"]
+  RN --> C["external checkpoint\ntrusted rollback pin"]
+  C --> V["verify\nreplay + compare"]
+  RN --> V
+  classDef meta fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:2px;
+  classDef record fill:#ccfbf1,stroke:#0f766e,color:#115e59,stroke-width:2px;
+  classDef cache fill:#fef3c7,stroke:#d97706,color:#92400e,stroke-width:2px;
+  classDef checkpoint fill:#dcfce7,stroke:#16a34a,color:#166534,stroke-width:2px;
+  classDef verify fill:#ede9fe,stroke:#7c3aed,color:#5b21b6,stroke-width:2px;
+  class M,A meta;
+  class R1,R2,RN record;
+  class H cache;
+  class C checkpoint;
+  class V verify;
+```
 
 ## Install
 
