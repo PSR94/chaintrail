@@ -15,7 +15,13 @@ const usageText = `Usage:
   chaintrail init [-dir DIR]
   chaintrail append [-dir DIR] -kind KIND (-data JSON | -file PATH | -stdin)
   chaintrail verify [-dir DIR] [-expect HASH] [-checkpoint TOKEN]
-  chaintrail checkpoint [-dir DIR]
+                    [-signed-checkpoint TOKEN -public-key PATH]
+  chaintrail checkpoint [-dir DIR] [-sign-key PRIVATE_KEY]
+  chaintrail query [-dir DIR] [-kind KIND | -kind-prefix PREFIX]
+                   [-from SEQ] [-to SEQ] [-since TIME] [-until TIME]
+                   [-limit N] [-format ndjson|json]
+  chaintrail stats [-dir DIR] [-format text|json]
+  chaintrail keygen [-private PATH] [-public PATH]
   chaintrail tail [-dir DIR] [-n COUNT]
   chaintrail repair [-dir DIR]
 `
@@ -39,6 +45,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = runVerify(args[1:], stdout, stderr)
 	case "checkpoint":
 		err = runCheckpoint(args[1:], stdout, stderr)
+	case "query":
+		err = runQuery(args[1:], stdout, stderr)
+	case "stats":
+		err = runStats(args[1:], stdout, stderr)
+	case "keygen":
+		err = runKeygen(args[1:], stdout, stderr)
 	case "tail":
 		err = runTail(args[1:], stdout, stderr)
 	case "repair":
@@ -154,11 +166,19 @@ func runVerify(args []string, stdout, stderr io.Writer) error {
 	dir := set.String("dir", ".chaintrail", "journal directory")
 	expect := set.String("expect", "", "expected current head hash")
 	checkpointText := set.String("checkpoint", "", "trusted checkpoint token")
+	signedCheckpointText := set.String("signed-checkpoint", "", "Ed25519-signed checkpoint token")
+	publicKeyPath := set.String("public-key", "", "Ed25519 public key for signed checkpoint")
 	if err := set.Parse(args); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if err := ensureNoPositionals(set); err != nil {
 		return err
+	}
+	if *checkpointText != "" && *signedCheckpointText != "" {
+		return fmt.Errorf("%w: choose either -checkpoint or -signed-checkpoint", errUsage)
+	}
+	if (*signedCheckpointText == "") != (*publicKeyPath == "") {
+		return fmt.Errorf("%w: -signed-checkpoint and -public-key must be supplied together", errUsage)
 	}
 	options := chaintrail.VerifyOptions{ExpectHash: *expect}
 	if *checkpointText != "" {
@@ -166,6 +186,14 @@ func runVerify(args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("%w: %v", errUsage, err)
 		}
+		options.Checkpoint = &checkpoint
+	}
+	if *signedCheckpointText != "" {
+		signed, err := chaintrail.VerifySignedCheckpoint(*signedCheckpointText, *publicKeyPath)
+		if err != nil {
+			return err
+		}
+		checkpoint := signed.Checkpoint()
 		options.Checkpoint = &checkpoint
 	}
 	result, err := chaintrail.Open(*dir).Verify(options)
@@ -179,13 +207,23 @@ func runVerify(args []string, stdout, stderr io.Writer) error {
 func runCheckpoint(args []string, stdout, stderr io.Writer) error {
 	set := flags("checkpoint", stderr)
 	dir := set.String("dir", ".chaintrail", "journal directory")
+	signKey := set.String("sign-key", "", "Ed25519 private key for signed checkpoint")
 	if err := set.Parse(args); err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if err := ensureNoPositionals(set); err != nil {
 		return err
 	}
-	checkpoint, err := chaintrail.Open(*dir).Checkpoint()
+	journal := chaintrail.Open(*dir)
+	if *signKey != "" {
+		token, _, err := journal.SignedCheckpoint(*signKey)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(stdout, token)
+		return nil
+	}
+	checkpoint, err := journal.Checkpoint()
 	if err != nil {
 		return err
 	}
