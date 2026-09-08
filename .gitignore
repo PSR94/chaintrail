@@ -1,0 +1,4 @@
+/.chaintrail/
+/chaintrail
+*.test
+.coverage
